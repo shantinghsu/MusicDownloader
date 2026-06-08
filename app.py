@@ -16,7 +16,7 @@ url = st.text_input(
   placeholder="https://www.youtube.com/watch?v=...",
 )
 
-if st.button("🚀 開始下載並記錄", type="primary", width=True):
+if st.button("🚀 開始下載並記錄", type="primary", width="stretch"):
   if not url.strip():
     st.warning("請輸入 YouTube 網址")
   else:
@@ -37,7 +37,7 @@ st.subheader("📋 下載歷史紀錄")
 
 history_rows = read_history()
 if history_rows:
-  st.dataframe(history_rows, width=True)
+  st.dataframe(history_rows, width="stretch")
 else:
   st.info("目前尚無下載紀錄。")
 

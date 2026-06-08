@@ -13,6 +13,7 @@ HISTORY_COLUMNS = ["下載時間", "歌曲名稱", "原始網址"]
 _logger = logging.getLogger("music_downloader")
 
 
+# 設定 logging 模組，將所有日誌以繁體中文格式寫入本地 app.log 檔案。
 def setup_logging() -> None:
   if _logger.handlers:
     return
@@ -31,6 +32,7 @@ def setup_logging() -> None:
   _logger.addHandler(handler)
 
 
+# 使用 yt-dlp 下載指定 YouTube 網址的影音，並自動轉檔成最高音質的 MP3。
 def download_mp3_from_youtube(url: str) -> tuple[str, str]:
   setup_logging()
   DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -74,6 +76,7 @@ def download_mp3_from_youtube(url: str) -> tuple[str, str]:
     raise
 
 
+# 將下載紀錄追加寫入 history.csv，欄位包含下載時間、歌曲名稱與原始網址。
 def append_to_history(title: str, url: str) -> None:
   setup_logging()
   row = {
@@ -93,6 +96,7 @@ def append_to_history(title: str, url: str) -> None:
   _logger.info("已寫入歷史紀錄：%s", title)
 
 
+# 讀取 history.csv 中的所有下載歷史紀錄，若檔案不存在則回傳空列表。
 def read_history() -> list[dict[str, str]]:
   if not HISTORY_FILE.exists() or HISTORY_FILE.stat().st_size == 0:
     return []
@@ -101,6 +105,7 @@ def read_history() -> list[dict[str, str]]:
     return list(csv.DictReader(csv_file))
 
 
+# 讀取 app.log 的最後 N 行內容，供側邊欄顯示開發者日誌。
 def read_last_log_lines(line_count: int = 10) -> list[str]:
   if not LOG_FILE.exists():
     return ["（尚無日誌）"]
