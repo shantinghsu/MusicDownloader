@@ -58,7 +58,7 @@ with st.sidebar:
     key="batch_playlist",
   )
 
-  if st.button("儲存設定", use_container_width=True):
+  if st.button("儲存設定", width='stretch'):
     save_settings(build_download_config())
     st.success("設定已儲存")
 
@@ -78,7 +78,7 @@ with st.form("youtube_url_form", clear_on_submit=False):
   parse_submitted = st.form_submit_button(
     "🚀 開始下載並記錄",
     type="primary",
-    use_container_width=True,
+    width='stretch',
   )
 
 if parse_submitted:
@@ -172,10 +172,10 @@ if st.session_state.track_previews:
     confirm_download = st.button(
       "✅ 確認下載並匯入",
       type="primary",
-      use_container_width=True,
+      width='stretch',
     )
   with cancel_col:
-    if st.button("取消", use_container_width=True):
+    if st.button("取消", width='stretch'):
       st.session_state.track_previews = None
       st.rerun()
 
@@ -219,6 +219,6 @@ st.subheader("📋 下載歷史紀錄")
 
 history_rows = read_history()
 if history_rows:
-  st.dataframe(history_rows, use_container_width=True)
+  st.dataframe(history_rows, width='stretch')
 else:
   st.info("目前尚無下載紀錄。")
