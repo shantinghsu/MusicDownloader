@@ -49,8 +49,12 @@ YDL_QUIET_OPTS = {
 @dataclass
 class DownloadConfig:
   download_dir: Path = DEFAULT_DOWNLOAD_DIR
-  filename_format: str = "song-artist"
+  filename_format: str = "song - artist"
 
+  def __post_init__(self):
+        if isinstance(self.download_dir, str):
+            self.download_dir = Path(self.download_dir)
+          
   def build_filename(self, song: str, artist: str, title: str) -> str:
     template = FILENAME_FORMATS.get(self.filename_format, FILENAME_FORMATS["song-artist"])
     filename = template.format(song=song, artist=artist, title=title)
@@ -157,7 +161,7 @@ def get_video_urls(url: str, batch_playlist: bool = False) -> list[str]:
   return video_urls or [url]
 
 
-# 從 yt-dlp 回傳的資訊中解析歌曲名稱、藝人與顯示用標題（歌曲-藝人）。
+# 從 yt-dlp 回傳的資訊中解析歌曲名稱、藝人與顯示用標題（歌曲 - 藝人）。
 def parse_song_info(info: dict) -> tuple[str, str, str]:
   title = info.get("title", "未知歌曲")
   artist = info.get("artist") or info.get("uploader") or info.get("channel") or "未知藝人"
@@ -170,7 +174,7 @@ def parse_song_info(info: dict) -> tuple[str, str, str]:
       song = right.strip()
       break
 
-  display_name = f"{song}-{artist}"
+  display_name = f"{song} - {artist}"
   return display_name, song, artist
 
 
@@ -256,6 +260,7 @@ def rename_mp3_file(
   artist: str,
   title: str,
 ) -> Path:
+  config.download_dir = Path(config.download_dir)
   destination = config.download_dir / config.build_filename(song, artist, title)
   if source_path.resolve() == destination.resolve():
     return destination
@@ -320,12 +325,23 @@ def download_mp3_from_youtube(
 ) -> tuple[str, str]:
   setup_logging()
   download_config = config or load_settings()
+
+  # 1. 取得設定
+  raw_config = config or load_settings()
+  
+  # 2. 🚨 防禦性轉型
+  if isinstance(raw_config, (str, Path)):
+      download_config = DownloadConfig(download_dir=Path(raw_config))
+  else:
+      download_config = raw_config
+      download_config.download_dir = Path(download_config.download_dir)
+
   download_config.download_dir.mkdir(parents=True, exist_ok=True)
 
   song = metadata.song.strip()
   artist = metadata.artist.strip()
   thumbnail_url = metadata.thumbnail_url.strip() if metadata.thumbnail_url else None
-  display_name = f"{song}-{artist}"
+  display_name = f"{song} - {artist}"
   original_title = metadata.original_title
 
   ydl_opts = {
