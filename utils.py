@@ -15,7 +15,7 @@ LOG_FILE = Path("app.log")
 HISTORY_COLUMNS = ["下載時間", "歌曲名稱", "原始網址"]
 
 ITUNES_AUTO_IMPORT_DIRS = [
-  Path.home() / "Music" / "iTunes" / "iTunes Media" / "Automatically Add to iTunes",
+  Path.home() / "Music" / "iTunes" / "iTunes Media" / "自動加入 iTunes",
   Path.home() / "Music" / "Apple Music" / "Automatically Add to Apple Music",
 ]
 

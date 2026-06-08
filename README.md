@@ -1,4 +1,5 @@
 # MusicDownloader
+
 A local web app to download YouTube music and sync to iTunes.
 
 This is a vibe coding program to help me conveniently download music from YouTube to my Apple Music app.
@@ -42,15 +43,17 @@ MusicDownloader/
 
 ## 技術棧
 
-| 類別 | 技術 | 用途 |
-|------|------|------|
-| 程式語言 | Python 3 | 後端邏輯與自動化腳本 |
-| 網頁框架 | [Streamlit](https://streamlit.io/) | 本地網頁 UI，快速建構互動式介面 |
-| 影音下載 | [yt-dlp](https://github.com/yt-dlp/yt-dlp) | 擷取 YouTube 音訊串流 |
-| 音訊轉檔 | FFmpeg | 將音訊轉換為 MP3 格式 |
-| 中繼資料 | [mutagen](https://github.com/quodlibet/mutagen) | MP3 標籤讀寫（預留擴充） |
-| 日誌 | Python `logging` | 繁體中文結構化日誌輸出 |
-| 資料儲存 | CSV（`csv` 模組） | 輕量級下載歷史紀錄 |
+
+| 類別   | 技術                                              | 用途                |
+| ---- | ----------------------------------------------- | ----------------- |
+| 程式語言 | Python 3                                        | 後端邏輯與自動化腳本        |
+| 網頁框架 | [Streamlit](https://streamlit.io/)              | 本地網頁 UI，快速建構互動式介面 |
+| 影音下載 | [yt-dlp](https://github.com/yt-dlp/yt-dlp)      | 擷取 YouTube 音訊串流   |
+| 音訊轉檔 | FFmpeg                                          | 將音訊轉換為 MP3 格式     |
+| 中繼資料 | [mutagen](https://github.com/quodlibet/mutagen) | MP3 標籤讀寫（預留擴充）    |
+| 日誌   | Python `logging`                                | 繁體中文結構化日誌輸出       |
+| 資料儲存 | CSV（`csv` 模組）                                   | 輕量級下載歷史紀錄         |
+
 
 ---
 
@@ -130,3 +133,4 @@ streamlit run app.py
 ---
 
 ## 授權
+
