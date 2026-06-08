@@ -1,6 +1,10 @@
 import csv
+import json
 import logging
+import os
+import re
 import shutil
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from urllib.request import urlopen
@@ -9,17 +13,62 @@ import yt_dlp
 from mutagen.id3 import APIC, ID3, TALB, TPE1, TIT2
 from mutagen.mp3 import MP3
 
-DOWNLOAD_DIR = Path("downloads")
+DEFAULT_DOWNLOAD_DIR = Path("downloads")
 HISTORY_FILE = Path("history.csv")
 LOG_FILE = Path("app.log")
+SETTINGS_FILE = Path("settings.json")
 HISTORY_COLUMNS = ["下載時間", "歌曲名稱", "原始網址"]
 
-ITUNES_AUTO_IMPORT_DIRS = [
-  Path.home() / "Music" / "iTunes" / "iTunes Media" / "自動加入 iTunes",
-  Path.home() / "Music" / "Apple Music" / "Automatically Add to Apple Music",
+FILENAME_FORMATS = {
+  "song-artist": "{song}-{artist}",
+  "artist-song": "{artist} - {song}",
+  "title": "{title}",
+}
+
+ITUNES_MEDIA_BASES = [
+  Path.home() / "Music" / "iTunes" / "iTunes Media",
+  Path.home() / "Music" / "Apple Music",
+]
+
+POSSIBLE_AUTO_IMPORT_NAMES = [
+  "自動加入 iTunes",
+  "Automatically Add to iTunes",
+  "自动加入 iTunes",
+  "Automatically Add to Apple Music",
+  "自動加入 Apple Music",
 ]
 
 _logger = logging.getLogger("music_downloader")
+
+YDL_QUIET_OPTS = {
+  "quiet": True,
+  "no_warnings": True,
+}
+
+
+@dataclass
+class DownloadConfig:
+  download_dir: Path = DEFAULT_DOWNLOAD_DIR
+  filename_format: str = "song-artist"
+
+  def build_filename(self, song: str, artist: str, title: str) -> str:
+    template = FILENAME_FORMATS.get(self.filename_format, FILENAME_FORMATS["song-artist"])
+    filename = template.format(song=song, artist=artist, title=title)
+    safe_name = yt_dlp.utils.sanitize_filename(filename, restricted=False)
+    return f"{safe_name}.mp3"
+
+
+@dataclass
+class SongMetadata:
+  url: str
+  song: str
+  artist: str
+  thumbnail_url: str | None
+  original_title: str
+
+  @property
+  def display_name(self) -> str:
+    return f"{self.song}-{self.artist}"
 
 
 # 設定 logging 模組，將所有日誌以繁體中文格式寫入本地 app.log 檔案。
@@ -39,6 +88,73 @@ def setup_logging() -> None:
   )
 
   _logger.addHandler(handler)
+
+
+# 讀取使用者自訂的下載設定（輸出資料夾與檔名格式）。
+def load_settings() -> DownloadConfig:
+  if not SETTINGS_FILE.exists():
+    return DownloadConfig()
+
+  try:
+    data = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+  except (json.JSONDecodeError, OSError):
+    return DownloadConfig()
+
+  return DownloadConfig(
+    download_dir=Path(data.get("download_dir", DEFAULT_DOWNLOAD_DIR)),
+    filename_format=data.get("filename_format", "song-artist"),
+  )
+
+
+# 儲存使用者自訂的下載設定至 settings.json。
+def save_settings(config: DownloadConfig) -> None:
+  payload = {
+    "download_dir": str(config.download_dir),
+    "filename_format": config.filename_format,
+  }
+  SETTINGS_FILE.write_text(
+    json.dumps(payload, ensure_ascii=False, indent=2),
+    encoding="utf-8",
+  )
+
+
+# 判斷網址是否為 YouTube 播放清單。
+def is_playlist_url(url: str) -> bool:
+  return "list=" in url and (
+    "playlist" in url
+    or re.search(r"youtube\.com/playlist", url) is not None
+  )
+
+
+# 從 YouTube 播放清單或單曲網址取得待下載的影片網址列表。
+def get_video_urls(url: str, batch_playlist: bool = False) -> list[str]:
+  if not batch_playlist and not is_playlist_url(url):
+    return [url]
+
+  ydl_opts = {
+    "extract_flat": "in_playlist",
+    **YDL_QUIET_OPTS,
+  }
+
+  with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+    info = ydl.extract_info(url, download=False)
+
+  if info.get("_type") != "playlist":
+    return [url]
+
+  video_urls: list[str] = []
+  for entry in info.get("entries") or []:
+    if not entry:
+      continue
+    video_id = entry.get("id") or entry.get("url")
+    if not video_id:
+      continue
+    if video_id.startswith("http"):
+      video_urls.append(video_id)
+    else:
+      video_urls.append(f"https://www.youtube.com/watch?v={video_id}")
+
+  return video_urls or [url]
 
 
 # 從 yt-dlp 回傳的資訊中解析歌曲名稱、藝人與顯示用標題（歌曲-藝人）。
@@ -64,6 +180,36 @@ def get_thumbnail_url(info: dict) -> str | None:
   if not thumbnails:
     return None
   return thumbnails[-1].get("url")
+
+
+# 使用 yt-dlp 預先解析單曲網址，取得元資料預覽資訊（不下載檔案）。
+def fetch_song_metadata(url: str) -> SongMetadata:
+  with yt_dlp.YoutubeDL(YDL_QUIET_OPTS) as ydl:
+    info = ydl.extract_info(url, download=False)
+
+  _display_name, song, artist = parse_song_info(info)
+  return SongMetadata(
+    url=url,
+    song=song,
+    artist=artist,
+    thumbnail_url=get_thumbnail_url(info),
+    original_title=info.get("title", song),
+  )
+
+
+# 預先解析單曲或播放清單內所有歌曲的元資料，供介面預覽與編輯。
+def preview_youtube_tracks(url: str, batch_playlist: bool = False) -> list[SongMetadata]:
+  setup_logging()
+  video_urls = get_video_urls(url, batch_playlist=batch_playlist)
+  previews = [fetch_song_metadata(video_url) for video_url in video_urls]
+
+  if len(previews) > 1:
+    _logger.info("[Preview] 播放清單解析完成，共 %s 首", len(previews))
+  else:
+    preview = previews[0]
+    _logger.info("[Preview] 單曲解析完成：%s", preview.display_name)
+
+  return previews
 
 
 # 將歌曲標題、藝人與封面圖寫入 MP3 檔案的 ID3 標籤。
@@ -102,45 +248,89 @@ def embed_mp3_metadata(
   audio.save()
 
 
-# 尋找或建立 iTunes／Apple Music 的自動匯入資料夾。
+# 依自訂檔名格式重新命名 MP3 檔案。
+def rename_mp3_file(
+  source_path: Path,
+  config: DownloadConfig,
+  song: str,
+  artist: str,
+  title: str,
+) -> Path:
+  destination = config.download_dir / config.build_filename(song, artist, title)
+  if source_path.resolve() == destination.resolve():
+    return destination
+
+  if destination.exists():
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    destination = destination.with_stem(f"{destination.stem}_{timestamp}")
+
+  source_path.replace(destination)
+  return destination
+
+
+# 具備國際化相容性的 iTunes 自動匯入資料夾偵測函式，優先尋找中文「自動加入 iTunes」。
 def get_itunes_auto_import_dir() -> Path:
-  for folder in ITUNES_AUTO_IMPORT_DIRS:
-    if folder.is_dir():
-      return folder
+  for base in ITUNES_MEDIA_BASES:
+    if base.is_dir():
+      for name in POSSIBLE_AUTO_IMPORT_NAMES:
+        folder = base / name
+        if folder.is_dir():
+          return folder
 
-  for folder in ITUNES_AUTO_IMPORT_DIRS:
-    try:
-      folder.mkdir(parents=True, exist_ok=True)
-      return folder
-    except OSError:
-      continue
+  for base in ITUNES_MEDIA_BASES:
+    if base.is_dir():
+      default_name = (
+        "Automatically Add to Apple Music"
+        if "Apple Music" in str(base)
+        else "自動加入 iTunes"
+      )
+      target_folder = base / default_name
+      try:
+        target_folder.mkdir(parents=True, exist_ok=True)
+        return target_folder
+      except OSError:
+        continue
 
-  raise FileNotFoundError("找不到 iTunes／Apple Music 自動匯入資料夾")
+  raise FileNotFoundError("找不到任何相容的 iTunes／Apple Music 媒體庫路徑")
 
 
 # 將 MP3 複製到 iTunes 自動匯入資料夾，由 iTunes 自動加入媒體庫。
 def import_to_itunes(mp3_path: Path) -> Path:
   import_dir = get_itunes_auto_import_dir()
+
+  try:
+    os.startfile(import_dir.resolve())
+  except Exception as exc:
+    _logger.warning("無法自動開啟資料夾: %s", exc)
+
   destination = import_dir / mp3_path.name
 
   if destination.exists():
-    stem = mp3_path.stem
-    suffix = mp3_path.suffix
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    destination = import_dir / f"{stem}_{timestamp}{suffix}"
+    destination = import_dir / f"{mp3_path.stem}_{timestamp}{mp3_path.suffix}"
 
   shutil.copy2(mp3_path, destination)
   return destination
 
 
-# 使用 yt-dlp 下載指定 YouTube 網址的影音，並自動轉檔成最高音質的 MP3。
-def download_mp3_from_youtube(url: str) -> tuple[str, str]:
+# 依使用者確認後的元資料正式下載 MP3、寫入標籤並匯入 iTunes。
+def download_mp3_from_youtube(
+  metadata: SongMetadata,
+  config: DownloadConfig | None = None,
+) -> tuple[str, str]:
   setup_logging()
-  DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+  download_config = config or load_settings()
+  download_config.download_dir.mkdir(parents=True, exist_ok=True)
+
+  song = metadata.song.strip()
+  artist = metadata.artist.strip()
+  thumbnail_url = metadata.thumbnail_url.strip() if metadata.thumbnail_url else None
+  display_name = f"{song}-{artist}"
+  original_title = metadata.original_title
 
   ydl_opts = {
     "format": "bestaudio/best",
-    "outtmpl": str(DOWNLOAD_DIR / "%(title)s.%(ext)s"),
+    "outtmpl": str(download_config.download_dir / "%(title)s.%(ext)s"),
     "postprocessors": [
       {
         "key": "FFmpegExtractAudio",
@@ -148,41 +338,43 @@ def download_mp3_from_youtube(url: str) -> tuple[str, str]:
         "preferredquality": "0",
       }
     ],
-    "quiet": True,
-    "no_warnings": True,
+    **YDL_QUIET_OPTS,
   }
 
   try:
-    _logger.info("1. 開始下載：%s", url)
+    _logger.info("1. 開始下載：%s", metadata.url)
+    _logger.info("2. 歌曲資訊獲取成功：%s", display_name)
+    _logger.info("3. 歌曲資訊確認......")
+
+    if not song or not artist:
+      raise ValueError("歌曲資訊不完整，無法繼續下載")
+
+    _logger.info("4. 歌曲資訊已確認")
+    _logger.info("5. 歌曲資訊打包至mp3檔......")
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-      info = ydl.extract_info(url, download=False)
-      display_name, song, artist = parse_song_info(info)
-      thumbnail_url = get_thumbnail_url(info)
+      ydl.extract_info(metadata.url, download=True)
 
-      _logger.info("2. 歌曲資訊獲取成功：%s", display_name)
-      _logger.info("3. 歌曲資訊確認......")
-
-      if not song or not artist:
-        raise ValueError("歌曲資訊不完整，無法繼續下載")
-
-      _logger.info("4. 歌曲資訊已確認")
-      _logger.info("5. 歌曲資訊打包至mp3檔......")
-
-      ydl.extract_info(url, download=True)
-
-    safe_title = yt_dlp.utils.sanitize_filename(info.get("title", song), restricted=True)
-    file_path = DOWNLOAD_DIR / f"{safe_title}.mp3"
+    safe_title = yt_dlp.utils.sanitize_filename(original_title, restricted=False)
+    file_path = download_config.download_dir / f"{safe_title}.mp3"
 
     if not file_path.exists():
-      mp3_files = list(DOWNLOAD_DIR.glob("*.mp3"))
+      mp3_files = list(download_config.download_dir.glob("*.mp3"))
       if not mp3_files:
         raise FileNotFoundError("找不到轉檔後的 MP3 檔案")
       file_path = max(mp3_files, key=lambda path: path.stat().st_mtime)
 
     embed_mp3_metadata(file_path, song, artist, thumbnail_url)
     _logger.info("6. 歌曲資訊已打包至mp3檔")
-    _logger.info("7. mp3存入downloads成功")
+
+    file_path = rename_mp3_file(
+      file_path,
+      download_config,
+      song,
+      artist,
+      original_title,
+    )
+    _logger.info("7. mp3存入%s成功", download_config.download_dir)
 
     _logger.info("8. 導入mp3至itunes自動匯入資料夾......")
     import_to_itunes(file_path)
@@ -191,8 +383,43 @@ def download_mp3_from_youtube(url: str) -> tuple[str, str]:
     return display_name, str(file_path)
 
   except Exception as exc:
-    _logger.error("下載失敗：%s | 錯誤：%s", url, exc)
+    _logger.error("下載失敗：%s | 錯誤：%s", metadata.url, exc)
     raise
+
+
+# 依使用者確認後的元資料批次下載並匯入 iTunes。
+def download_confirmed_tracks(
+  tracks: list[SongMetadata],
+  config: DownloadConfig | None = None,
+) -> list[tuple[str, str, str]]:
+  setup_logging()
+  download_config = config or load_settings()
+
+  if len(tracks) > 1:
+    _logger.info("[Playlist] 開始批次下載，共 %s 首", len(tracks))
+
+  results: list[tuple[str, str, str]] = []
+  for index, track in enumerate(tracks, start=1):
+    if len(tracks) > 1:
+      _logger.info("[Playlist] 正在下載第 %s/%s 首", index, len(tracks))
+
+    display_name, file_path = download_mp3_from_youtube(track, download_config)
+    results.append((display_name, file_path, track.url))
+
+  if len(tracks) > 1:
+    _logger.info("[Playlist] 批次下載完成，共 %s 首", len(results))
+
+  return results
+
+
+# 批次下載 YouTube 單曲或播放清單，回傳每首歌曲的下載結果。
+def download_youtube_batch(
+  url: str,
+  config: DownloadConfig | None = None,
+  batch_playlist: bool = False,
+) -> list[tuple[str, str, str]]:
+  previews = preview_youtube_tracks(url, batch_playlist=batch_playlist)
+  return download_confirmed_tracks(previews, config)
 
 
 # 將下載紀錄追加寫入 history.csv，欄位包含下載時間、歌曲名稱與原始網址。
