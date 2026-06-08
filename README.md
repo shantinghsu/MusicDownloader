@@ -15,14 +15,19 @@ For the initial version, it will be in Mandarin.
 
 **音樂下載與自動同步工具**（Music Downloader）解決了「從 YouTube 取得音樂並整理到本地媒體庫」這一常見需求。使用者無需熟悉命令列，只要在網頁介面貼上連結、點擊按鈕，系統便會：
 
-1. 呼叫 `yt-dlp` 擷取指定影片的音訊串流
-2. 透過 FFmpeg 自動轉檔為最高音質的 MP3，儲存至 `downloads/` 資料夾
-3. 將下載時間、歌曲名稱與原始網址寫入 `history.csv`
-4. 以繁體中文格式將操作過程記錄至 `app.log`，並在側邊欄即時顯示最後 10 行日誌
+1. 呼叫 `yt-dlp` 擷取指定影片或播放清單的音訊串流
+2. 透過 FFmpeg 自動轉檔為最高音質的 MP3，並以 Mutagen 寫入 ID3 標籤與封面
+3. 依自訂資料夾與檔名格式儲存 MP3，並自動匯入 iTunes／Apple Music
+4. 將下載時間、歌曲名稱與原始網址寫入 `history.csv`
+5. 以繁體中文格式將操作過程記錄至 `app.log`，並在側邊欄即時顯示最後 15 行日誌
 
 ### 主要功能
 
-- **一鍵下載**：貼上 YouTube 網址即可下載並轉檔
+- **一鍵下載**：貼上 YouTube 單曲或播放清單網址即可下載並轉檔
+- **中繼資料寫入**：自動嵌入歌曲標題、藝人與專輯封面至 MP3
+- **iTunes 同步**：下載完成後自動複製至 iTunes／Apple Music 自動匯入資料夾
+- **自訂輸出**：側邊欄可設定輸出資料夾與檔名格式（歌曲-藝人、藝人 - 歌曲、原始標題）
+- **播放清單批次下載**：支援整份 YouTube 播放清單一次下載
 - **進度回饋**：下載過程顯示 Spinner 與進度條
 - **歷史紀錄**：網頁底部以表格呈現所有下載紀錄
 - **開發者日誌**：側邊欄即時預覽 `app.log`，方便錯誤排查
@@ -34,7 +39,8 @@ MusicDownloader/
 ├── app.py              # Streamlit 網頁介面
 ├── utils.py            # 核心功能模組（下載、紀錄、日誌）
 ├── requirements.txt    # Python 相依套件
-├── downloads/          # MP3 輸出目錄（執行時自動建立）
+├── settings.json       # 使用者下載設定（執行時自動建立）
+├── downloads/          # 預設 MP3 輸出目錄（執行時自動建立）
 ├── history.csv         # 下載歷史紀錄（執行時自動建立）
 └── app.log             # 執行日誌（執行時自動建立）
 ```
@@ -50,7 +56,7 @@ MusicDownloader/
 | 網頁框架 | [Streamlit](https://streamlit.io/)              | 本地網頁 UI，快速建構互動式介面 |
 | 影音下載 | [yt-dlp](https://github.com/yt-dlp/yt-dlp)      | 擷取 YouTube 音訊串流   |
 | 音訊轉檔 | FFmpeg                                          | 將音訊轉換為 MP3 格式     |
-| 中繼資料 | [mutagen](https://github.com/quodlibet/mutagen) | MP3 標籤讀寫（預留擴充）    |
+| 中繼資料 | [mutagen](https://github.com/quodlibet/mutagen) | MP3 ID3 標籤與封面寫入      |
 | 日誌   | Python `logging`                                | 繁體中文結構化日誌輸出       |
 | 資料儲存 | CSV（`csv` 模組）                                   | 輕量級下載歷史紀錄         |
 
@@ -118,10 +124,10 @@ streamlit run app.py
 
 ### 階段四：媒體庫整合與中繼資料
 
-- [ ] 使用 `mutagen` 寫入 MP3 ID3 標籤（標題、藝人、專輯封面）
-- [ ] 自動同步下載的 MP3 至 iTunes／Apple Music 媒體庫
-- [ ] 支援自訂輸出資料夾與檔名格式
-- [ ] 支援播放清單（Playlist）批次下載
+- [x] 使用 `mutagen` 寫入 MP3 ID3 標籤（標題、藝人、專輯封面）
+- [x] 自動同步下載的 MP3 至 iTunes／Apple Music 媒體庫
+- [x] 支援自訂輸出資料夾與檔名格式
+- [x] 支援播放清單（Playlist）批次下載
 
 ### 階段五：品質提升與作品集完善
 
