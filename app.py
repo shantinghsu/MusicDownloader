@@ -113,50 +113,59 @@ if st.session_state.track_previews:
   confirmed_tracks: list[SongMetadata] = []
 
   for index, preview in enumerate(previews):
-    container = st.expander(
-      f"第 {index + 1} 首：{preview.display_name}",
-      expanded=not is_batch or index == 0,
-    ) if is_batch else st.container()
+      container = st.expander(
+          f"第 {index + 1} 首：{preview.display_name}",
+          expanded=not is_batch or index == 0,
+      ) if is_batch else st.container()
 
-    with container:
-      cover_col, form_col = st.columns([1, 2], gap="large")
+      with container:
+          # 建立左右兩欄
+          cover_col, form_col = st.columns([1, 2], gap="large")
 
-      with cover_col:
-        st.markdown("**專輯封面預覽**")
-        thumbnail_default = preview.thumbnail_url or ""
+          # 👈 1. 處理左邊的封面欄位（把圖片渲染移到這裡面）
+          with cover_col:
+              st.markdown("**專輯封面預覽**")
+              thumbnail_default = preview.thumbnail_url or ""
+              
+              # 🎯 從原本的最下方搬到這裡！並且加上動態對應（用 st.session_state 或是直接用 default 值預覽）
+              # 為了讓它能即時對應右邊輸入框的網址，我們先定義好值
+              current_thumbnail = st.session_state.get(f"preview_thumbnail_{index}_{preview.url}", thumbnail_default)
+              
+              if current_thumbnail.strip():
+                  st.image(current_thumbnail.strip(), width=220)
+              else:
+                  st.info("尚未設定封面圖網址")
 
-      with form_col:
-        song = st.text_input(
-          "歌名",
-          value=preview.song,
-          key=f"preview_song_{index}_{preview.url}",
-        )
-        artist = st.text_input(
-          "歌手",
-          value=preview.artist,
-          key=f"preview_artist_{index}_{preview.url}",
-        )
-        thumbnail_url = st.text_input(
-          "封面圖網址",
-          value=thumbnail_default,
-          help="可貼上其他圖片網址以替換預設封面",
-          key=f"preview_thumbnail_{index}_{preview.url}",
-        )
+          # 👈 2. 處理右邊的輸入表單欄位
+          with form_col:
+              song = st.text_input(
+                  "歌名",
+                  value=preview.song,
+                  key=f"preview_song_{index}_{preview.url}",
+              )
+              artist = st.text_input(
+                  "歌手",
+                  value=preview.artist,
+                  key=f"preview_artist_{index}_{preview.url}",
+              )
+              thumbnail_url = st.text_input(
+                  "封面圖網址",
+                  value=thumbnail_default,
+                  help="可貼上其他圖片網址以替換預設封面",
+                  key=f"preview_thumbnail_{index}_{preview.url}",
+              )
 
-      if thumbnail_url.strip():
-        st.image(thumbnail_url.strip(), width=220)
-      else:
-        st.info("尚未設定封面圖網址")
+          # 💡 原本寫在最底部的 st.image 區塊已經被我們搬上去囉！
 
-      confirmed_tracks.append(
-        SongMetadata(
-          url=preview.url,
-          song=song.strip() or preview.song,
-          artist=artist.strip() or preview.artist,
-          thumbnail_url=thumbnail_url.strip() or None,
-          original_title=preview.original_title,
-        )
-      )
+          confirmed_tracks.append(
+              SongMetadata(
+                  url=preview.url,
+                  song=song.strip() or preview.song,
+                  artist=artist.strip() or preview.artist,
+                  thumbnail_url=thumbnail_url.strip() or None,
+                  original_title=preview.original_title,
+              )
+          )
 
   confirm_col, cancel_col = st.columns([3, 1])
   with confirm_col:
