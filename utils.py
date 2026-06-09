@@ -6,12 +6,15 @@ import re
 import shutil
 from dataclasses import dataclass
 from datetime import datetime
+from io import BytesIO
 from pathlib import Path
 from urllib.request import urlopen
 
+import requests
 import yt_dlp
 from mutagen.id3 import APIC, ID3, TALB, TPE1, TIT2
 from mutagen.mp3 import MP3
+from PIL import Image
 
 DEFAULT_DOWNLOAD_DIR = Path("downloads")
 HISTORY_FILE = Path("history.csv")
@@ -73,6 +76,20 @@ class SongMetadata:
   @property
   def display_name(self) -> str:
     return f"{self.song}-{self.artist}"
+
+
+def crop_max_square(url: str):
+  try:
+    response = requests.get(url, timeout=15)
+    response.raise_for_status()
+    image = Image.open(BytesIO(response.content))
+    width, height = image.size
+    side = min(width, height)
+    left = (width - side) // 2
+    top = (height - side) // 2
+    return image.crop((left, top, left + side, top + side))
+  except Exception:
+    return None
 
 
 # 設定 logging 模組，將所有日誌以繁體中文格式寫入本地 app.log 檔案。

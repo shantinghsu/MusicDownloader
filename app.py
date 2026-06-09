@@ -4,6 +4,7 @@ from utils import (
   DownloadConfig,
   SongMetadata,
   append_to_history,
+  crop_max_square,
   download_confirmed_tracks,
   is_playlist_url,
   load_settings,
@@ -132,7 +133,8 @@ if st.session_state.track_previews:
               current_thumbnail = st.session_state.get(f"preview_thumbnail_{index}_{preview.url}", thumbnail_default)
               
               if current_thumbnail.strip():
-                  st.image(current_thumbnail.strip(), width=220)
+                  cropped_image = crop_max_square(current_thumbnail.strip())
+                  st.image(cropped_image if cropped_image is not None else current_thumbnail.strip(), width=220)
               else:
                   st.info("尚未設定封面圖網址")
 
