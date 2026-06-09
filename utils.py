@@ -28,6 +28,11 @@ FILENAME_FORMATS = {
   "title": "{title}",
 }
 
+LEGACY_FILENAME_FORMATS = {
+  "song-artist": "song - artist",
+  "artist-song": "artist - song",
+}
+
 ITUNES_MEDIA_BASES = [
   Path.home() / "Music" / "iTunes" / "iTunes Media",
   Path.home() / "Music" / "Apple Music",
@@ -55,9 +60,10 @@ class DownloadConfig:
   filename_format: str = "song - artist"
 
   def __post_init__(self):
-        if isinstance(self.download_dir, str):
-            self.download_dir = Path(self.download_dir)
-          
+    if isinstance(self.download_dir, str):
+      self.download_dir = Path(self.download_dir)
+    self.filename_format = normalize_filename_format(self.filename_format)
+    self.download_dir = self.download_dir.expanduser().resolve()
   def build_filename(self, song: str, artist: str, title: str) -> str:
     template = FILENAME_FORMATS.get(self.filename_format, FILENAME_FORMATS["song - artist"])
     filename = template.format(song=song, artist=artist, title=title)
@@ -92,6 +98,53 @@ def crop_max_square(url: str):
     return None
 
 
+# 將舊版或無效的 filename_format 正規化為程式支援的 key。
+def normalize_filename_format(filename_format: str) -> str:
+  if filename_format in FILENAME_FORMATS:
+    return filename_format
+  return LEGACY_FILENAME_FORMATS.get(filename_format, "song - artist")
+
+
+# 正規化下載設定，確保輸出目錄為絕對路徑且資料夾已建立。
+def normalize_download_config(config: DownloadConfig | None = None) -> DownloadConfig:
+  if config is None:
+    config = load_settings()
+  elif isinstance(config, (str, Path)):
+    config = DownloadConfig(download_dir=Path(config))
+  elif not isinstance(config, DownloadConfig):
+    config = load_settings()
+  else:
+    config = DownloadConfig(
+      download_dir=config.download_dir,
+      filename_format=config.filename_format,
+    )
+
+  config.download_dir.mkdir(parents=True, exist_ok=True)
+  return config
+
+
+# 從 yt-dlp 下載結果中取得實際產出的 MP3 檔案路徑。
+def resolve_downloaded_mp3_path(ydl: yt_dlp.YoutubeDL, info: dict, download_dir: Path) -> Path:
+  requested_downloads = info.get("requested_downloads") or []
+  for item in requested_downloads:
+    filepath = item.get("filepath")
+    if filepath:
+      candidate = Path(filepath)
+      if candidate.suffix.lower() == ".mp3" and candidate.exists():
+        return candidate.resolve()
+
+  for candidate in (
+    Path(ydl.prepare_filename(info, ext="mp3")),
+    download_dir / f"{yt_dlp.utils.sanitize_filename(info.get('title', 'unknown'), restricted=False)}.mp3",
+  ):
+    if candidate.exists():
+      return candidate.resolve()
+
+  raise FileNotFoundError(
+    f"找不到轉檔後的 MP3 檔案（預期目錄：{download_dir.resolve()}）"
+  )
+
+
 # 設定 logging 模組，將所有日誌以繁體中文格式寫入本地 app.log 檔案。
 def setup_logging() -> None:
   if _logger.handlers:
@@ -123,7 +176,9 @@ def load_settings() -> DownloadConfig:
 
   return DownloadConfig(
     download_dir=Path(data.get("download_dir", DEFAULT_DOWNLOAD_DIR)),
-    filename_format=data.get("filename_format", "song - artist"),
+    filename_format=normalize_filename_format(
+      data.get("filename_format", "song - artist")
+    ),
   )
 
 
@@ -277,8 +332,8 @@ def rename_mp3_file(
   artist: str,
   title: str,
 ) -> Path:
-  config.download_dir = Path(config.download_dir)
-  destination = config.download_dir / config.build_filename(song, artist, title)
+  source_path = source_path.resolve()
+  destination = (config.download_dir / config.build_filename(song, artist, title)).resolve()
   if source_path.resolve() == destination.resolve():
     return destination
 
@@ -341,31 +396,18 @@ def download_mp3_from_youtube(
   config: DownloadConfig | None = None,
 ) -> tuple[str, str]:
   setup_logging()
-  
-  base_config = config or load_settings()
-    
-  if isinstance(base_config, (str, Path)):
-      # 如果拿到的是純字串/路徑，直接建立標準物件
-      download_config = DownloadConfig(download_dir=Path(base_config))
-  elif hasattr(base_config, "download_dir"):
-      # 如果是正確的物件，確保其內部的 download_dir 欄位百分之百是 Path
-      download_config = base_config
-      download_config.download_dir = Path(download_config.download_dir)
-  else:
-      # 萬一發生其他意外，直接降級讀取預設設定
-      download_config = load_settings()
-
-  download_config.download_dir.mkdir(parents=True, exist_ok=True)
+  download_config = normalize_download_config(config)
 
   song = metadata.song.strip()
   artist = metadata.artist.strip()
   thumbnail_url = metadata.thumbnail_url.strip() if metadata.thumbnail_url else None
   display_name = f"{song} - {artist}"
-  original_title = metadata.original_title
 
+  download_dir = download_config.download_dir
   ydl_opts = {
     "format": "bestaudio/best",
-    "outtmpl": str(download_config.download_dir / "%(title)s.%(ext)s"),
+    "outtmpl": str(download_dir / "%(title)s.%(ext)s"),
+    "paths": {"home": str(download_dir), "temp": str(download_dir)},
     "postprocessors": [
       {
         "key": "FFmpegExtractAudio",
@@ -388,16 +430,8 @@ def download_mp3_from_youtube(
     _logger.info("5. 歌曲資訊打包至mp3檔......")
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-      ydl.extract_info(metadata.url, download=True)
-
-    safe_title = yt_dlp.utils.sanitize_filename(original_title, restricted=False)
-    file_path = download_config.download_dir / f"{safe_title}.mp3"
-
-    if not file_path.exists():
-      mp3_files = list(download_config.download_dir.glob("*.mp3"))
-      if not mp3_files:
-        raise FileNotFoundError("找不到轉檔後的 MP3 檔案")
-      file_path = max(mp3_files, key=lambda path: path.stat().st_mtime)
+      info = ydl.extract_info(metadata.url, download=True)
+      file_path = resolve_downloaded_mp3_path(ydl, info, download_dir)
 
     embed_mp3_metadata(file_path, song, artist, thumbnail_url)
     _logger.info("6. 歌曲資訊已打包至mp3檔")
@@ -407,7 +441,7 @@ def download_mp3_from_youtube(
       download_config,
       song,
       artist,
-      original_title,
+      metadata.original_title,
     )
     _logger.info("7. mp3存入%s成功", download_config.download_dir)
 
@@ -428,7 +462,7 @@ def download_confirmed_tracks(
   config: DownloadConfig | None = None,
 ) -> list[tuple[str, str, str]]:
   setup_logging()
-  download_config = config or load_settings()
+  download_config = normalize_download_config(config)
 
   if len(tracks) > 1:
     _logger.info("[Playlist] 開始批次下載，共 %s 首", len(tracks))

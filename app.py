@@ -15,7 +15,7 @@ from utils import (
 )
 
 FILENAME_FORMAT_OPTIONS = {
-  "歌曲-藝人（七里香 - 周杰倫）": "song - artist",
+  "歌曲 - 藝人（七里香 - 周杰倫）": "song - artist",
   "藝人 - 歌曲（周杰倫 - 七里香）": "artist - song",
   "YouTube 原始標題": "title",
 }
@@ -29,12 +29,23 @@ st.title("🎵 個人音樂自動化下載中心")
 
 saved_settings = load_settings()
 
+try:
+  default_format_index = list(FILENAME_FORMAT_OPTIONS.values()).index(
+    saved_settings.filename_format
+  )
+except ValueError:
+  default_format_index = 0
+
 
 def build_download_config() -> DownloadConfig:
   format_label = st.session_state.get("format_label", list(FILENAME_FORMAT_OPTIONS.keys())[0])
+  filename_format = FILENAME_FORMAT_OPTIONS.get(
+    format_label,
+    list(FILENAME_FORMAT_OPTIONS.values())[default_format_index],
+  )
   return DownloadConfig(
     download_dir=st.session_state.get("download_dir", str(saved_settings.download_dir)),
-    filename_format=FILENAME_FORMAT_OPTIONS[format_label],
+    filename_format=filename_format,
   )
 
 
@@ -49,7 +60,7 @@ with st.sidebar:
   format_label = st.selectbox(
     "檔名格式",
     options=list(FILENAME_FORMAT_OPTIONS.keys()),
-    index=list(FILENAME_FORMAT_OPTIONS.values()).index(saved_settings.filename_format),
+    index=default_format_index,
     key="format_label",
   )
   batch_playlist = st.checkbox(
@@ -120,25 +131,11 @@ if st.session_state.track_previews:
       ) if is_batch else st.container()
 
       with container:
-          # 建立左右兩欄
           cover_col, form_col = st.columns([1, 2], gap="large")
 
-          # 👈 1. 處理左邊的封面欄位（把圖片渲染移到這裡面）
-          with cover_col:
-              st.markdown("**專輯封面預覽**")
-              thumbnail_default = preview.thumbnail_url or ""
-              
-              # 🎯 從原本的最下方搬到這裡！並且加上動態對應（用 st.session_state 或是直接用 default 值預覽）
-              # 為了讓它能即時對應右邊輸入框的網址，我們先定義好值
-              current_thumbnail = st.session_state.get(f"preview_thumbnail_{index}_{preview.url}", thumbnail_default)
-              
-              if current_thumbnail.strip():
-                  cropped_image = crop_max_square(current_thumbnail.strip())
-                  st.image(cropped_image if cropped_image is not None else current_thumbnail.strip(), width=220)
-              else:
-                  st.info("尚未設定封面圖網址")
+          thumbnail_default = preview.thumbnail_url or ""
+          thumbnail_key = f"preview_thumbnail_{index}_{preview.url}"
 
-          # 👈 2. 處理右邊的輸入表單欄位
           with form_col:
               song = st.text_input(
                   "歌名",
@@ -154,10 +151,21 @@ if st.session_state.track_previews:
                   "封面圖網址",
                   value=thumbnail_default,
                   help="可貼上其他圖片網址以替換預設封面",
-                  key=f"preview_thumbnail_{index}_{preview.url}",
+                  key=thumbnail_key,
               )
 
-          # 💡 原本寫在最底部的 st.image 區塊已經被我們搬上去囉！
+          with cover_col:
+              st.markdown("**專輯封面預覽**")
+              current_thumbnail = st.session_state.get(thumbnail_key, thumbnail_default)
+
+              if current_thumbnail.strip():
+                  cropped_image = crop_max_square(current_thumbnail.strip())
+                  st.image(
+                      cropped_image if cropped_image is not None else current_thumbnail.strip(),
+                      width=220,
+                  )
+              else:
+                  st.info("尚未設定封面圖網址")
 
           confirmed_tracks.append(
               SongMetadata(
