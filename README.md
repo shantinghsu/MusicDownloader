@@ -133,7 +133,7 @@ streamlit run app.py
 ### 階段五：品質提升與作品集完善
 
 - [ ] 撰寫單元測試，涵蓋下載、紀錄與日誌模組
-- [ ] 新增 `.gitignore`，排除 `venv/`、`downloads/`、日誌等執行時檔案
+- [x] 新增 `.gitignore`，排除 `venv/`、`downloads/`、日誌等執行時檔案
 - [ ] 改善錯誤訊息與使用者操作引導（如 FFmpeg 未安裝提示）
 - [ ] 部署示範環境或錄製操作 Demo，供 UC 轉學申請作品集展示
 
