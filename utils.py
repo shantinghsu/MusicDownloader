@@ -520,16 +520,4 @@ def read_history() -> list[dict[str, str]]:
     return list(csv.DictReader(csv_file))
 
 
-# 讀取 app.log 的最後 N 行內容，供側邊欄顯示開發者日誌。
-def read_last_log_lines(line_count: int = 10) -> list[str]:
-  if not LOG_FILE.exists():
-    return ["（尚無日誌）"]
-
-  lines = LOG_FILE.read_text(encoding="utf-8").splitlines()
-  if not lines:
-    return ["（尚無日誌）"]
-
-  return lines[-line_count:]
-
-
 setup_logging()

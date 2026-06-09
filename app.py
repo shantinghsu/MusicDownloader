@@ -10,7 +10,6 @@ from utils import (
   load_settings,
   preview_youtube_tracks,
   read_history,
-  read_last_log_lines,
   save_settings,
 )
 
@@ -74,11 +73,6 @@ with st.sidebar:
     save_settings(build_download_config())
     st.success("設定已儲存")
 
-  st.divider()
-  st.header("🔧 開發者 Log")
-  st.caption("顯示 app.log 最後 15 行")
-  log_lines = read_last_log_lines(15)
-  st.code("\n".join(log_lines), language="text")
 
 with st.form("youtube_url_form", clear_on_submit=False):
   st.caption("在網址輸入框貼上連結後，按 Enter 或點擊按鈕即可開始解析。")
