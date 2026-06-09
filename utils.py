@@ -97,7 +97,7 @@ def _download_cover_image(url: str) -> Image.Image | None:
   except Exception:
     return None
 
-
+# 專輯封面預覽靠左置中
 def _crop_center_square(image: Image.Image) -> Image.Image:
   width, height = image.size
   side = min(width, height)
@@ -105,7 +105,7 @@ def _crop_center_square(image: Image.Image) -> Image.Image:
   top = (height - side) // 2
   return image.crop((left, top, left + side, top + side))
 
-
+# 專輯封面轉檔至jepq格式
 def _image_to_jpeg_bytes(image: Image.Image) -> bytes | None:
   if image.mode in ("RGBA", "LA", "P"):
     rgba = image.convert("RGBA")
@@ -419,6 +419,34 @@ def rename_mp3_file(
   source_path.replace(destination)
   return destination
 
+# 檢測歌曲是否重複下載
+def is_duplicate_download(url=None, song=None, artist=None):
+    """
+    檢查是否存在重複的下載記錄。
+    :param url: YouTube 影片的 URL
+    :param song: 歌名
+    :param artist: 歌手
+    :return: 如果重複則返回 True，否則返回 False
+    """
+    if not HISTORY_FILE.exists():
+        return False  # 如果歷史檔案不存在，直接返回 False
+
+    with HISTORY_FILE.open("r", encoding="utf-8") as file:
+        reader = csv.DictReader(file)
+        for row in reader:
+            # 檢查 URL 是否重複
+            if url and row.get("原始網址") == url:
+                _logger.info("檢測到重複的歌曲（URL）：%s", url)
+                return True
+
+            # 檢查歌曲名稱和歌手是否重複（忽略大小寫）
+            if song and artist:
+                if row.get("歌曲名稱", "").strip().lower() == song.strip().lower() and \
+                   row.get("歌手", "").strip().lower() == artist.strip().lower():
+                    _logger.info("檢測到重複的歌曲（歌曲名稱和歌手）：%s - %s", song, artist)
+                    return True
+                    
+    return False
 
 # 具備國際化相容性的 iTunes 自動匯入資料夾偵測函式，優先尋找中文「自動加入 iTunes」。
 def get_itunes_auto_import_dir() -> Path:

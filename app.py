@@ -11,6 +11,7 @@ from utils import (
   preview_youtube_tracks,
   read_history,
   save_settings,
+  is_duplicate_download,
 )
 
 FILENAME_FORMAT_OPTIONS = {
@@ -190,8 +191,17 @@ if st.session_state.track_previews:
     if invalid_tracks:
       st.error("歌名與歌手不可為空，請補齊後再確認下載。")
     else:
-      config = build_download_config()
-      save_settings(config)
+      # 檢查是否有重複的歌曲
+      duplicate_tracks = [
+          track for track in confirmed_tracks
+          if is_duplicate_download(url=track.url, song=track.song, artist=track.artist)
+      ]
+      if duplicate_tracks:
+          duplicate_names = [f"{track.song} - {track.artist}" for track in duplicate_tracks]
+          st.warning(f"以下歌曲已存在於下載歷史中，請勿重複下載：\n{', '.join(duplicate_names)}")
+      else:
+        config = build_download_config()
+        save_settings(config)
 
       try:
         with st.spinner("正在下載、寫入標籤並匯入 iTunes，請稍候..."):
