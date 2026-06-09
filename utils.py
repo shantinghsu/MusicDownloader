@@ -441,11 +441,10 @@ def is_duplicate_download(url=None, song=None, artist=None):
 
             # 檢查歌曲名稱和歌手是否重複（忽略大小寫）
             if song and artist:
-                if row.get("歌曲名稱", "").strip().lower() == song.strip().lower() and \
-                   row.get("歌手", "").strip().lower() == artist.strip().lower():
+                if row.get("歌曲名稱", "").strip().lower() == song.strip().lower():
                     _logger.info("檢測到重複的歌曲（歌曲名稱和歌手）：%s - %s", song, artist)
                     return True
-                    
+
     return False
 
 # 具備國際化相容性的 iTunes 自動匯入資料夾偵測函式，優先尋找中文「自動加入 iTunes」。
