@@ -5,9 +5,10 @@ A local web app to download YouTube music and sync to iTunes.
 This is a vibe coding program to help me conveniently download music from YouTube to my Apple Music app.
 For the initial version, it will be in Mandarin.
 
-# 🎵 音樂下載與自動同步工具
+# 🎵 YT音樂下載與iTunes自動同步工具
 
-一個以 Python 打造的本地網頁應用，讓使用者透過瀏覽器貼上 YouTube 網址，即可自動下載影音、轉檔為高品質 MP3，並記錄下載歷史與執行日誌。本專案為個人作品集專案，目標是展示全端開發能力與自動化工作流程設計。
+一個以 Python 打造的本地網頁應用，讓使用者透過瀏覽器貼上 YouTube 網址，即可自動下載影音、轉檔為高品質 MP3，並記錄下載歷史與執行日誌。
+本專案為個人作品集專案，目標是展示全端開發能力與自動化工作流程設計。
 
 ---
 
