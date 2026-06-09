@@ -15,8 +15,8 @@ from utils import (
 )
 
 FILENAME_FORMAT_OPTIONS = {
-  "歌曲-藝人（七里香-周杰倫）": "song-artist",
-  "藝人 - 歌曲（周杰倫 - 七里香）": "artist-song",
+  "歌曲-藝人（七里香 - 周杰倫）": "song - artist",
+  "藝人 - 歌曲（周杰倫 - 七里香）": "artist - song",
   "YouTube 原始標題": "title",
 }
 

@@ -23,8 +23,8 @@ SETTINGS_FILE = Path("settings.json")
 HISTORY_COLUMNS = ["下載時間", "歌曲名稱", "原始網址"]
 
 FILENAME_FORMATS = {
-  "song-artist": "{song}-{artist}",
-  "artist-song": "{artist} - {song}",
+  "song - artist": "{song} - {artist}",
+  "artist - song": "{artist} - {song}",
   "title": "{title}",
 }
 
@@ -59,7 +59,7 @@ class DownloadConfig:
             self.download_dir = Path(self.download_dir)
           
   def build_filename(self, song: str, artist: str, title: str) -> str:
-    template = FILENAME_FORMATS.get(self.filename_format, FILENAME_FORMATS["song-artist"])
+    template = FILENAME_FORMATS.get(self.filename_format, FILENAME_FORMATS["song - artist"])
     filename = template.format(song=song, artist=artist, title=title)
     safe_name = yt_dlp.utils.sanitize_filename(filename, restricted=False)
     return f"{safe_name}.mp3"
@@ -123,7 +123,7 @@ def load_settings() -> DownloadConfig:
 
   return DownloadConfig(
     download_dir=Path(data.get("download_dir", DEFAULT_DOWNLOAD_DIR)),
-    filename_format=data.get("filename_format", "song-artist"),
+    filename_format=data.get("filename_format", "song - artist"),
   )
 
 
@@ -341,17 +341,19 @@ def download_mp3_from_youtube(
   config: DownloadConfig | None = None,
 ) -> tuple[str, str]:
   setup_logging()
-  download_config = config or load_settings()
-
-  # 1. 取得設定
-  raw_config = config or load_settings()
   
-  # 2. 🚨 防禦性轉型
-  if isinstance(raw_config, (str, Path)):
-      download_config = DownloadConfig(download_dir=Path(raw_config))
-  else:
-      download_config = raw_config
+  base_config = config or load_settings()
+    
+  if isinstance(base_config, (str, Path)):
+      # 如果拿到的是純字串/路徑，直接建立標準物件
+      download_config = DownloadConfig(download_dir=Path(base_config))
+  elif hasattr(base_config, "download_dir"):
+      # 如果是正確的物件，確保其內部的 download_dir 欄位百分之百是 Path
+      download_config = base_config
       download_config.download_dir = Path(download_config.download_dir)
+  else:
+      # 萬一發生其他意外，直接降級讀取預設設定
+      download_config = load_settings()
 
   download_config.download_dir.mkdir(parents=True, exist_ok=True)
 
