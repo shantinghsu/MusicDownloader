@@ -6,3 +6,5 @@ app.log
 settings.json
 __pycache__/utils.cpython-313.pyc
 
+MusicDownloader.code-workspace
+downloads/
