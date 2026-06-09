@@ -80,8 +80,8 @@ winget install Gyan.FFmpeg
 
 ```powershell
 # 1. 複製專案
-git clone https://github.com/shantinghsu/music-downloader.git
-cd music-downloader
+git clone https://github.com/shantinghsu/MusicDownloader.git
+cd MusicDownloader
 
 # 2. 建立並啟動虛擬環境
 python -m venv venv
