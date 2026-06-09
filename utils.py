@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
-from urllib.request import urlopen
 
 import requests
 import yt_dlp
@@ -84,17 +83,78 @@ class SongMetadata:
     return f"{self.song}-{self.artist}"
 
 
-def crop_max_square(url: str):
+def _download_cover_image(url: str) -> Image.Image | None:
   try:
-    response = requests.get(url, timeout=15)
+    response = requests.get(
+      url,
+      timeout=15,
+      headers={"User-Agent": "Mozilla/5.0"},
+    )
     response.raise_for_status()
     image = Image.open(BytesIO(response.content))
-    width, height = image.size
-    side = min(width, height)
-    left = (width - side) // 2
-    top = (height - side) // 2
-    return image.crop((left, top, left + side, top + side))
+    image.load()
+    return image
   except Exception:
+    return None
+
+
+def _crop_center_square(image: Image.Image) -> Image.Image:
+  width, height = image.size
+  side = min(width, height)
+  left = (width - side) // 2
+  top = (height - side) // 2
+  return image.crop((left, top, left + side, top + side))
+
+
+def _image_to_jpeg_bytes(image: Image.Image) -> bytes | None:
+  if image.mode in ("RGBA", "LA", "P"):
+    rgba = image.convert("RGBA")
+    background = Image.new("RGB", rgba.size, (255, 255, 255))
+    background.paste(rgba, mask=rgba.split()[-1])
+    image = background
+  elif image.mode != "RGB":
+    image = image.convert("RGB")
+
+  buffer = BytesIO()
+  image.save(buffer, format="JPEG", quality=95, subsampling=0)
+  cover_data = buffer.getvalue()
+
+  if not cover_data.startswith(b"\xff\xd8"):
+    return None
+
+  return cover_data
+
+
+def crop_max_square(url: str):
+  image = _download_cover_image(url)
+  if image is None:
+    return None
+
+  try:
+    return _crop_center_square(image)
+  except Exception:
+    return None
+
+
+# 下載並裁切封面圖，轉為真正的 JPEG 二進位資料供 APIC 標籤寫入。
+def prepare_cover_bytes(thumbnail_url: str) -> bytes | None:
+  setup_logging()
+
+  try:
+    image = _download_cover_image(thumbnail_url)
+    if image is None:
+      _logger.warning("封面圖下載失敗：%s", thumbnail_url)
+      return None
+
+    square_image = _crop_center_square(image)
+    cover_data = _image_to_jpeg_bytes(square_image)
+    if cover_data is None:
+      _logger.warning("封面圖 JPEG 轉換失敗：%s", thumbnail_url)
+      return None
+
+    return cover_data
+  except Exception as exc:
+    _logger.warning("prepare_cover_bytes 失敗：%s | 錯誤：%s", thumbnail_url, exc)
     return None
 
 
@@ -295,6 +355,8 @@ def embed_mp3_metadata(
   artist: str,
   thumbnail_url: str | None,
 ) -> None:
+  setup_logging()
+  file_path = Path(file_path)
   audio = MP3(file_path, ID3=ID3)
   if audio.tags is None:
     audio.add_tags()
@@ -308,20 +370,33 @@ def embed_mp3_metadata(
   audio.tags.add(TPE1(encoding=3, text=artist))
   audio.tags.add(TALB(encoding=3, text=artist))
 
-  if thumbnail_url:
-    with urlopen(thumbnail_url, timeout=15) as response:
-      cover_data = response.read()
-    audio.tags.add(
-      APIC(
-        encoding=3,
-        mime="image/jpeg",
-        type=3,
-        desc="Cover",
-        data=cover_data,
+  if thumbnail_url and thumbnail_url.strip():
+    try:
+      cover_data = prepare_cover_bytes(thumbnail_url.strip())
+      if cover_data:
+        audio.tags.add(
+          APIC(
+            encoding=0,
+            mime="image/jpeg",
+            type=3,
+            desc="Cover",
+            data=cover_data,
+          )
+        )
+        _logger.info("封面已成功寫入 APIC 標籤（JPEG，%s bytes）", len(cover_data))
+      else:
+        _logger.warning(
+          "封面圖下載或裁切失敗，略過 APIC 標籤寫入：%s",
+          thumbnail_url,
+        )
+    except Exception as exc:
+      _logger.warning(
+        "封面圖寫入失敗，略過 APIC 標籤：%s | 錯誤：%s",
+        thumbnail_url,
+        exc,
       )
-    )
 
-  audio.save()
+  audio.save(v2_version=3)
 
 
 # 依自訂檔名格式重新命名 MP3 檔案。
