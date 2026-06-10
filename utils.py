@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import shutil
+import streamlit as st
 from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
@@ -124,7 +125,7 @@ def _image_to_jpeg_bytes(image: Image.Image) -> bytes | None:
 
   return cover_data
 
-
+@st.cache_data
 def crop_max_square(url: str):
   image = _download_cover_image(url)
   if image is None:
