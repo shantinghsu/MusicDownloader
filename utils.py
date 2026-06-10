@@ -368,7 +368,7 @@ def embed_mp3_metadata(
 
   audio.tags.add(TIT2(encoding=3, text=song))
   audio.tags.add(TPE1(encoding=3, text=artist))
-  audio.tags.add(TALB(encoding=3, text=artist))
+  audio.tags.add(TALB(encoding=3, text=song))
 
   if thumbnail_url and thumbnail_url.strip():
     try:
