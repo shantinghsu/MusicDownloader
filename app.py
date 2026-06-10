@@ -191,24 +191,30 @@ if st.session_state.track_previews:
     if invalid_tracks:
       st.error("歌名與歌手不可為空，請補齊後再確認下載。")
     else:
-      # 檢查是否有重複的歌曲
-      duplicate_tracks = [
-          track for track in confirmed_tracks
-          if is_duplicate_download(url=track.url, song=track.song, artist=track.artist)
-      ]
+      config = build_download_config()
+      save_settings(config)
+
+      # 初始化兩個陣列，將歌曲分流處理
+      tracks_to_download = []  # 存放真正需要下載的歌
+      duplicate_tracks = []    # 存放重複的歌，稍後用來提示
+      
+      # 逐一檢查播放清單中的每首歌曲
+      for track in confirmed_tracks:
+          if is_duplicate_download(url=track.url, song=track.song, artist=track.artist):
+              duplicate_tracks.append(track)  # 重複的，丟進歷史區
+          else:
+              tracks_to_download.append(track) # 乾淨的，留下來下載
+      
       if duplicate_tracks:
           duplicate_names = [f"{track.song} - {track.artist}" for track in duplicate_tracks]
           st.warning(f"以下歌曲已存在於下載歷史中，請勿重複下載：\n{', '.join(duplicate_names)}")
-      else:
-        config = build_download_config()
-        save_settings(config)
 
       try:
         with st.spinner("正在下載、寫入標籤並匯入 iTunes，請稍候..."):
           progress = st.progress(0, text="1. 開始下載...")
           progress.progress(20, text="2. 依確認後的元資料下載中...")
 
-          results = download_confirmed_tracks(confirmed_tracks, config=config)
+          results = download_confirmed_tracks(tracks_to_download, config=config)
 
           for index, (title, _file_path, video_url) in enumerate(results, start=1):
             progress.progress(
