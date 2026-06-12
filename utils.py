@@ -66,7 +66,10 @@ class DownloadConfig:
     self.download_dir = self.download_dir.expanduser().resolve()
   def build_filename(self, song: str, artist: str, title: str) -> str:
     template = FILENAME_FORMATS.get(self.filename_format, FILENAME_FORMATS["song - artist"])
-    filename = template.format(song=song, artist=artist, title=title)
+    filename = template
+    filename = filename.replace("{song}", song.strip())
+    filename = filename.replace("{artist}", artist.strip())
+    filename = filename.replace("{title}", title.strip())
     safe_name = yt_dlp.utils.sanitize_filename(filename, restricted=False)
     return f"{safe_name}.mp3"
 
@@ -405,6 +408,7 @@ def rename_mp3_file(
   source_path: Path,
   config: DownloadConfig,
   song: str,
+
   artist: str,
   title: str,
 ) -> Path:
@@ -421,7 +425,7 @@ def rename_mp3_file(
   return destination
 
 # 檢測歌曲是否重複下載
-def is_duplicate_download(url=None, song=None, artist=None):
+def is_duplicate_download(config=DownloadConfig(), url=None, song=None, artist=None):
     """
     檢查是否存在重複的下載記錄。
     :param url: YouTube 影片的 URL
@@ -436,13 +440,17 @@ def is_duplicate_download(url=None, song=None, artist=None):
         reader = csv.DictReader(file)
         for row in reader:
             # 檢查 URL 是否重複
+            """
             if url and row.get("原始網址") == url:
                 _logger.info("檢測到重複的歌曲（URL）：%s", url)
                 return True
-
+            """
             # 檢查歌曲名稱和歌手是否重複（忽略大小寫）
+            title = config.build_filename(song, artist, "")
+
+            history_title = row.get("歌曲名稱", "").strip().lower()
             if song and artist:
-                if row.get("歌曲名稱", "").strip().lower() == song.strip().lower():
+                if history_title == title.strip().lower():
                     _logger.info("檢測到重複的歌曲（歌曲名稱和歌手）：%s - %s", song, artist)
                     return True
 
@@ -504,7 +512,7 @@ def download_mp3_from_youtube(
   song = metadata.song.strip()
   artist = metadata.artist.strip()
   thumbnail_url = metadata.thumbnail_url.strip() if metadata.thumbnail_url else None
-  display_name = f"{song} - {artist}"
+  display_name = download_config.build_filename(song, artist, "")
 
   download_dir = download_config.download_dir
   ydl_opts = {
