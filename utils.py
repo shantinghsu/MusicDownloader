@@ -16,6 +16,10 @@ from mutagen.id3 import APIC, ID3, TALB, TPE1, TIT2
 from mutagen.mp3 import MP3
 from PIL import Image
 
+from google import genai
+from google.genai import types
+from pydantic import BaseModel
+
 DEFAULT_DOWNLOAD_DIR = Path("downloads")
 HISTORY_FILE = Path("history.csv")
 LOG_FILE = Path("app.log")
@@ -85,6 +89,46 @@ class SongMetadata:
   @property
   def display_name(self) -> str:
     return f"{self.song}-{self.artist}"
+  
+
+class TrackInfo(BaseModel):
+    song: str
+    artist: str
+
+def parse_title_with_gemini(original_title: str) -> tuple[str, str]:
+    """利用 Gemini 辨識 YouTube 標題。回傳 (song, artist)，若失敗則回傳空字串。"""
+    if not original_title:
+        return "", ""
+        
+    try:
+        client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
+        prompt = (
+            f"請從這個 YouTube 影片標題中，精準提取出『歌曲名稱』與『歌手/藝人/樂團名稱』。\n"
+            f"標題：{original_title}\n\n"
+            f"注意：\n"
+            f"1. 剔除所有無關文字（如 MV, Official, 歌詞版, HD, 官方, 特典）。\n"
+            f"2. 如果標題中沒有明確歌手，歌手請填寫 'Unknown'。\n"
+            f"3. 絕對不要在歌名或歌手兩側加上大括號 {{}} 或中括號 []。"
+            f"4. 如果歌名尾巴帶有括號且裡面是歌詞或副標題（例如：靜音恋人 (两颗缠绕的心)），請直接剔除括號及其文字，只保留核心歌名（如：靜音恋人）。"
+        )
+        
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=TrackInfo,
+                temperature=0.0
+            ),
+        )
+        
+        data = json.loads(response.text)
+        return data.get("song", "").strip(), data.get("artist", "").strip()
+        
+    except Exception as e:
+        _logger.warning("AI 解析失敗，準備退回原始解析: %s", e)
+        st.error(f"🧙‍♂️ Gemini 引擎罷工，原因：{e}")
+        return "", ""
 
 
 def _download_cover_image(url: str) -> Image.Image | None:
@@ -322,19 +366,35 @@ def get_thumbnail_url(info: dict) -> str | None:
   return thumbnails[-1].get("url")
 
 
-# 使用 yt-dlp 預先解析單曲網址，取得元資料預覽資訊（不下載檔案）。
+# 預先解析單曲網址，取得元資料預覽資訊（不下載檔案）。
 def fetch_song_metadata(url: str) -> SongMetadata:
-  with yt_dlp.YoutubeDL(YDL_QUIET_OPTS) as ydl:
-    info = ydl.extract_info(url, download=False)
+    with yt_dlp.YoutubeDL(YDL_QUIET_OPTS) as ydl:
+        info = ydl.extract_info(url, download=False)
 
-  _display_name, song, artist = parse_song_info(info)
-  return SongMetadata(
-    url=url,
-    song=song,
-    artist=artist,
-    thumbnail_url=get_thumbnail_url(info),
-    original_title=info.get("title", song),
-  )
+    original_title = info.get("title", "未知歌曲")
+
+    # 1. 優先嘗試讓 AI 解析
+    ai_song, ai_artist = parse_title_with_gemini(original_title)
+    print(ai_song, " - ", ai_artist)
+
+    # 2. 判斷 AI 是否成功：如果成功就用 AI 的，如果失敗 (空值) 就用舊版分割法
+    if ai_song and ai_artist and ai_artist != "Unknown":
+        song = ai_song
+        artist = ai_artist
+    else:
+        # 這是你原本的預設分解法
+        _display_name, song, artist = parse_song_info(info)
+
+    song = re.sub(r'\s*[（(].*?[）)]\s*$', '', song).strip()
+
+    # 3. 把最終決定好的 song 和 artist 塞給 metadata，送回給 app.py 產生預覽
+    return SongMetadata(
+        url=url,
+        song=song,
+        artist=artist,
+        thumbnail_url=get_thumbnail_url(info),
+        original_title=original_title,
+    )
 
 
 # 預先解析單曲或播放清單內所有歌曲的元資料，供介面預覽與編輯。
