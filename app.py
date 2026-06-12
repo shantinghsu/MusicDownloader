@@ -200,7 +200,7 @@ if st.session_state.track_previews:
       
       # 逐一檢查播放清單中的每首歌曲
       for track in confirmed_tracks:
-          if is_duplicate_download(config=config, url=track.url, song=track.song, artist=track.artist):
+          if is_duplicate_download(config=config, song=track.song, artist=track.artist):
               duplicate_tracks.append(track)  # 重複的，丟進歷史區
           else:
               tracks_to_download.append(track) # 乾淨的，留下來下載

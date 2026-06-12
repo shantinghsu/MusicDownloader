@@ -425,7 +425,7 @@ def rename_mp3_file(
   return destination
 
 # 檢測歌曲是否重複下載
-def is_duplicate_download(config=DownloadConfig(), url=None, song=None, artist=None):
+def is_duplicate_download(config=DownloadConfig(), song=None, artist=None):
     """
     檢查是否存在重複的下載記錄。
     :param url: YouTube 影片的 URL
@@ -439,12 +439,6 @@ def is_duplicate_download(config=DownloadConfig(), url=None, song=None, artist=N
     with HISTORY_FILE.open("r", encoding="utf-8") as file:
         reader = csv.DictReader(file)
         for row in reader:
-            # 檢查 URL 是否重複
-            """
-            if url and row.get("原始網址") == url:
-                _logger.info("檢測到重複的歌曲（URL）：%s", url)
-                return True
-            """
             # 檢查歌曲名稱和歌手是否重複（忽略大小寫）
             title = config.build_filename(song, artist, "")
 
