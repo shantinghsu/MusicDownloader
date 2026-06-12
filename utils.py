@@ -12,7 +12,7 @@ from pathlib import Path
 
 import requests
 import yt_dlp
-from mutagen.id3 import APIC, ID3, TALB, TPE1, TIT2
+from mutagen.id3 import APIC, ID3, TALB, TPE1, TPE2, TIT2, TIT3, TCMP
 from mutagen.mp3 import MP3
 from PIL import Image
 
@@ -84,8 +84,10 @@ class SongMetadata:
   url: str
   song: str
   artist: str
+  album: str
   thumbnail_url: str | None
   original_title: str
+  song_type: str = "無"
 
   @property
   def display_name(self) -> str:
@@ -446,6 +448,8 @@ def fetch_song_metadata(url: str) -> SongMetadata:
         url=url,
         song=song,
         artist=artist,
+        album = song,
+        song_type="無",
         thumbnail_url=get_thumbnail_url(info),
         original_title=original_title,
     )
@@ -496,6 +500,8 @@ def preview_youtube_tracks(url: str, batch_playlist: bool = False) -> list[SongM
                 url=info.get("webpage_url", url),
                 song=song,
                 artist=artist,
+                album=song,
+                song_type="無",
                 thumbnail_url=get_thumbnail_url(info),
                 original_title=original_title,
             )
@@ -515,6 +521,8 @@ def embed_mp3_metadata(
   file_path: Path,
   song: str,
   artist: str,
+  album: str,
+  song_type: str,
   thumbnail_url: str | None,
 ) -> None:
   setup_logging()
@@ -524,13 +532,26 @@ def embed_mp3_metadata(
     audio.add_tags()
 
   audio.tags.delall("TIT2")
+  audio.tags.delall("TIT3")
   audio.tags.delall("TPE1")
+  audio.tags.delall("TPE2")
+  audio.tags.delall("TCMP")
   audio.tags.delall("TALB")
   audio.tags.delall("APIC")
 
+  display_song_title = song
+  if song_type and song_type != "無":
+      display_song_title = f"{song} ({song_type})"
+
+  audio.tags.add(TIT2(encoding=3, text=display_song_title))
   audio.tags.add(TIT2(encoding=3, text=song))
   audio.tags.add(TPE1(encoding=3, text=artist))
-  audio.tags.add(TALB(encoding=3, text=song))
+  audio.tags.add(TALB(encoding=3, text=album))
+  audio.tags.add(TPE2(encoding=3, text="Various Artists")) # 專輯藝人設定為群星
+  audio.tags.add(TCMP(encoding=3, text="1"))
+
+  if song_type and song_type != "無":
+      audio.tags.add(TIT3(encoding=3, text=song_type))
 
   if thumbnail_url and thumbnail_url.strip():
     try:
@@ -663,6 +684,8 @@ def download_mp3_from_youtube(
 
   song = metadata.song.strip()
   artist = metadata.artist.strip()
+  album = metadata.album.strip()
+  song_type = metadata.song_type
   thumbnail_url = metadata.thumbnail_url.strip() if metadata.thumbnail_url else None
   display_name = download_config.build_filename(song, artist, "")
 
@@ -696,7 +719,7 @@ def download_mp3_from_youtube(
       info = ydl.extract_info(metadata.url, download=True)
       file_path = resolve_downloaded_mp3_path(ydl, info, download_dir)
 
-    embed_mp3_metadata(file_path, song, artist, thumbnail_url)
+    embed_mp3_metadata(file_path, song, artist, album, song_type, thumbnail_url)
     _logger.info("6. 歌曲資訊已打包至mp3檔")
 
     file_path = rename_mp3_file(
