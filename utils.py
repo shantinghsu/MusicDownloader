@@ -19,6 +19,7 @@ from PIL import Image
 from google import genai
 from google.genai import types
 from pydantic import BaseModel
+from typing import List
 
 DEFAULT_DOWNLOAD_DIR = Path("downloads")
 HISTORY_FILE = Path("history.csv")
@@ -95,6 +96,9 @@ class TrackInfo(BaseModel):
     song: str
     artist: str
 
+class PlaylistTrackList(BaseModel):
+    tracks: List[TrackInfo]
+
 def parse_title_with_gemini(original_title: str) -> tuple[str, str]:
     """利用 Gemini 辨識 YouTube 標題。回傳 (song, artist)，若失敗則回傳空字串。"""
     if not original_title:
@@ -129,6 +133,56 @@ def parse_title_with_gemini(original_title: str) -> tuple[str, str]:
         _logger.warning("AI 解析失敗，準備退回原始解析: %s", e)
         st.error(f"🧙‍♂️ Gemini 引擎罷工，原因：{e}")
         return "", ""
+    
+
+def parse_multiple_titles_with_gemini(titles_list: list[str]) -> list[tuple[str, str]]:
+    """一口氣把所有 YouTube 標題丟給 Gemini 解析，只算 1 次 API 要求"""
+    if not titles_list:
+        return []
+        
+    try:
+        client = genai.Client()
+        
+        # 把標題清單加上編號組合成文字，方便 AI 閱讀
+        formatted_titles = "\n".join([f"{i+1}. {t}" for i, t in enumerate(titles_list)])
+        
+        prompt = (
+            f"請從以下這組 YouTube 影片標題清單中，精準提取出每首歌的『歌曲名稱』與『歌手/藝人/樂團名稱』。\n"
+            f"必須按照原本的順序依序解析。\n\n"
+            f"【標題清單】\n{formatted_titles}\n\n"
+            f"注意：\n"
+            f"1. 剔除所有無關文字（如 MV, Official, 歌詞版, HD, 官方, 特典）。\n"
+            f"2. 如果標題中沒有明確歌手，歌手請填寫 'Unknown'。\n"
+            f"3. 如果歌名尾巴帶有括號歌詞（例如：靜音恋人 (两颗缠绕的心)），請剔除括號及其文字。"
+        )
+        
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=PlaylistTrackList, # 🎯 規定回傳整組陣列
+                temperature=0.0
+            ),
+        )
+        
+        data = json.loads(response.text)
+        extracted_tracks = data.get("tracks", [])
+        
+        # 轉回 (song, artist) 的 tuple 列表
+        results = []
+        for track in extracted_tracks:
+            results.append((track.get("song", "").strip(), track.get("artist", "").strip()))
+            
+        # 萬一 AI 回傳的數量跟我們給的不一樣，做個安全防護補空值
+        while len(results) < len(titles_list):
+            results.append(("", ""))
+            
+        return results
+        
+    except Exception as e:
+        _logger.warning("批次 AI 解析失敗: %s，全數退回原始解析。", e)
+        return [("", "")] * len(titles_list)
 
 
 def _download_cover_image(url: str) -> Image.Image | None:
@@ -399,17 +453,61 @@ def fetch_song_metadata(url: str) -> SongMetadata:
 
 # 預先解析單曲或播放清單內所有歌曲的元資料，供介面預覽與編輯。
 def preview_youtube_tracks(url: str, batch_playlist: bool = False) -> list[SongMetadata]:
-  setup_logging()
-  video_urls = get_video_urls(url, batch_playlist=batch_playlist)
-  previews = [fetch_song_metadata(video_url) for video_url in video_urls]
+    setup_logging()
+    video_urls = get_video_urls(url, batch_playlist=batch_playlist)
+    
+    # 1. 第一步：先用 yt-dlp 快速抓出所有影片的原始資訊與標題 (不調用 AI)
+    raw_infos = []
+    original_titles = []
+    
+    with yt_dlp.YoutubeDL(YDL_QUIET_OPTS) as ydl:
+        for v_url in video_urls:
+            try:
+                info = ydl.extract_info(v_url, download=False)
+                raw_infos.append(info)
+                original_titles.append(info.get("title", "未知歌曲"))
+            except Exception as e:
+                _logger.warning("無法解析網址 %s: %s", v_url, e)
 
-  if len(previews) > 1:
-    _logger.info("[Preview] 播放清單解析完成，共 %s 首", len(previews))
-  else:
-    preview = previews[0]
-    _logger.info("[Preview] 單曲解析完成：%s", preview.display_name)
+    # 2. 第二步：【核心優化】把所有人聚集起來，集體呼叫 1 次 AI！
+    ai_results = parse_multiple_titles_with_gemini(original_titles)
 
-  return previews
+    # 3. 第三步：結合 AI 結果與你原本的備援機制
+    previews = []
+    for info, original_title, (ai_song, ai_artist) in zip(raw_infos, original_titles, ai_results):
+        
+        # 判斷 AI 成功與否
+        if ai_song:
+            song = ai_song
+            if not ai_artist or ai_artist.lower() == "unknown" or ai_artist == "未知藝人":
+                artist = info.get("artist") or info.get("uploader") or info.get("channel") or "未知藝人"
+            else:
+                artist = ai_artist
+        else:
+            # 傳統備援切分
+            _display_name, song, artist = parse_song_info(info)
+
+        # 🧼 終極保險清潔
+        song = re.sub(r'\s*[（(].*?[）)]\s*$', '', song).strip()
+        artist = re.sub(r'\s*-\s*Topic$', '', artist).strip()
+
+        previews.append(
+            SongMetadata(
+                url=info.get("webpage_url", url),
+                song=song,
+                artist=artist,
+                thumbnail_url=get_thumbnail_url(info),
+                original_title=original_title,
+            )
+        )
+
+    if len(previews) > 1:
+        _logger.info("[Preview] 播放清單解析完成，共 %s 首", len(previews))
+    else:
+        if previews:
+            _logger.info("[Preview] 單曲解析完成：%s", previews[0].display_name)
+
+    return previews
 
 
 # 將歌曲標題、藝人與封面圖寫入 MP3 檔案的 ID3 標籤。
